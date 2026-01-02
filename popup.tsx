@@ -1,24 +1,17 @@
-import { useState } from "react"
-
 function IndexPopup() {
-  const [data, setData] = useState("")
-
   return (
     <div
       style={{
-        padding: 16
+        padding: 16,
+        minWidth: 250,
+        fontFamily: "system-ui, sans-serif"
       }}>
-      <h2>
-        Welcome to your{" "}
-        <a href="https://www.plasmo.com" target="_blank">
-          Plasmo
-        </a>{" "}
-        Extension!
+      <h2 style={{ marginTop: 0, marginBottom: 12 }}>
+        ᓚᘏᗢ Cat Replacer
       </h2>
-      <input onChange={(e) => setData(e.target.value)} value={data} />
-      <a href="https://docs.plasmo.com" target="_blank">
-        View Docs
-      </a>
+      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+        Replaces all text in childless elements with cat characters!
+      </p>
     </div>
   )
 }
