@@ -1,4 +1,7 @@
-This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with [`plasmo init`](https://www.npmjs.com/package/plasmo).
+This is a Chrome extension that converts each "M" into a cat
+
+<img width="356" height="125" alt="image" src="https://github.com/user-attachments/assets/3fe937e4-d8c1-4b15-be5d-cb749e0b161c" />
+
 
 ## Getting Started
 
