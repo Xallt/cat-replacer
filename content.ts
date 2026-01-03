@@ -1,205 +1,212 @@
-const DATA_ATTR_ORIGINAL = "data-cat-original"
+const CATIFY_CLASS = "catify"
 
-const CAT_STYLES = {
-  ascii: "ᓚᘏᗢ",
-  cute1: "ᓚ₍ ^. .^₎",
-  cute2: " ꐑ՞•ﻌ•՞ꐑ"
+let symbolCatsEnabled = false
+
+const SYMBOL_PATTERNS = /M/g
+
+const CAT_OFFSETS = {
+  layerInset: "-0.15em -0.2em -0.05em -0.2em",
+  eyeSize: "0.12em",
+  mouthSize: "0.7em",
+  eyeLeft: "0.38em",
+  eyeRight: "0.38em",
+  eyeTop: "0.85em",
+  mouthLeft: "50%",
+  mouthTop: "1.35em"
 } as const
 
-type CatStyle = keyof typeof CAT_STYLES
-
-let currentStyle: CatStyle | null = null
-
-function replaceTextWithCats(text: string, style: CatStyle | null): string {
-  if (style === null) {
-    return text
-  }
-
-  if (style === "ascii") {
-    const catChars = CAT_STYLES.ascii
-    let catIndex = 0
-    return text
-      .split("")
-      .map((char) => {
-        if (/\s/.test(char)) {
-          return char
-        }
-        const catChar = catChars[catIndex % catChars.length]
-        catIndex++
-        return catChar
-      })
-      .join("")
-  }
-
-  if (style === "cute1" || style === "cute2") {
-    const catFace = CAT_STYLES[style]
-    return text
-      .split(/(\s+)/)
-      .map((part) => {
-        if (/\s/.test(part)) {
-          return part
-        }
-        if (part.trim().length === 0) {
-          return part
-        }
-        return catFace
-      })
-      .join("")
-  }
-
-  return text
+const CAT_DECORATION_STYLES = `
+.catify {
+  position: relative;
+  display: inline;
+  line-height: inherit;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0;
 }
 
-function storeOriginalText(element: Element): void {
-  if (element.hasAttribute(DATA_ATTR_ORIGINAL)) {
-    return
-  }
-
-  const textNodes = Array.from(element.childNodes).filter(
-    (node) => node.nodeType === Node.TEXT_NODE
-  ) as Text[]
-
-  if (textNodes.length > 0) {
-    const fullText = textNodes.map((node) => node.textContent || "").join("")
-    if (fullText.trim().length > 0) {
-      element.setAttribute(DATA_ATTR_ORIGINAL, fullText)
-    }
-  }
+.cat-glyph {
+  position: relative;
+  z-index: 1;
 }
 
-function restoreElementText(element: Element): void {
-  const original = element.getAttribute(DATA_ATTR_ORIGINAL)
-  if (original === null) {
-    return
-  }
-
-  const textNodes = Array.from(element.childNodes).filter(
-    (node) => node.nodeType === Node.TEXT_NODE
-  ) as Text[]
-
-  if (textNodes.length === 0) {
-    return
-  }
-
-  if (textNodes.length === 1) {
-    textNodes[0].textContent = original
-  } else {
-    const firstNode = textNodes[0]
-    firstNode.textContent = original
-    for (let i = 1; i < textNodes.length; i++) {
-      textNodes[i].textContent = ""
-    }
-  }
+.cat-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  inset: var(--cat-inset, ${CAT_OFFSETS.layerInset});
+  overflow: visible;
 }
 
-function isStyleOrLinkTag(tagName: string): boolean {
-  const styleTags = [
-    "a", "span", "strong", "em", "b", "i", "u", "mark", "small",
-    "sub", "sup", "code", "kbd", "samp", "var", "del", "ins",
-    "s", "strike", "font", "big", "tt", "abbr", "acronym", "cite",
-    "dfn", "q", "ruby", "rt", "rp", "bdi", "bdo", "wbr"
-  ]
-  return styleTags.includes(tagName.toLowerCase())
+.cat-eye {
+  position: absolute;
+  width: var(--cat-eye-size, ${CAT_OFFSETS.eyeSize});
+  height: var(--cat-eye-size, ${CAT_OFFSETS.eyeSize});
+  background: currentColor;
+  border-radius: 50%;
 }
 
-function hasOnlyTextNodes(element: Element): boolean {
-  const hasTextNodes = Array.from(element.childNodes).some(
-    (node) => node.nodeType === Node.TEXT_NODE
-  )
-
-  if (!hasTextNodes) {
-    return false
-  }
-
-  const allChildrenAreStyleTags = Array.from(element.children).every(
-    (child) => isStyleOrLinkTag(child.tagName)
-  )
-
-  return allChildrenAreStyleTags
+.cat-mouth {
+  position: absolute;
+  font-size: var(--cat-mouth-size, ${CAT_OFFSETS.mouthSize});
+  line-height: 1;
 }
 
-function shouldProcessElement(element: Element): boolean {
+.catify .cat-eye-l {
+  left: ${CAT_OFFSETS.eyeLeft};
+  top: ${CAT_OFFSETS.eyeTop};
+}
+
+.catify .cat-eye-r {
+  right: ${CAT_OFFSETS.eyeRight};
+  top: ${CAT_OFFSETS.eyeTop};
+}
+
+.catify .cat-mouth {
+  left: ${CAT_OFFSETS.mouthLeft};
+  top: ${CAT_OFFSETS.mouthTop};
+  transform: translateX(-50%) rotate(90deg);
+}
+`
+
+function injectCatStyles(): void {
+  if (document.getElementById("cat-decoration-styles")) return
+
+  const styleEl = document.createElement("style")
+  styleEl.id = "cat-decoration-styles"
+  styleEl.textContent = CAT_DECORATION_STYLES
+  document.head.appendChild(styleEl)
+}
+
+function removeCatStyles(): void {
+  const styleEl = document.getElementById("cat-decoration-styles")
+  if (styleEl) styleEl.remove()
+}
+
+function createCatWrapper(char: string): HTMLSpanElement {
+  const wrapper = document.createElement("span")
+  wrapper.className = CATIFY_CLASS
+
+  const glyph = document.createElement("span")
+  glyph.className = "cat-glyph"
+  glyph.textContent = char
+
+  const layer = document.createElement("span")
+  layer.className = "cat-layer"
+  layer.setAttribute("aria-hidden", "true")
+
+  const eyeL = document.createElement("span")
+  eyeL.className = "cat-eye cat-eye-l"
+
+  const eyeR = document.createElement("span")
+  eyeR.className = "cat-eye cat-eye-r"
+
+  const mouth = document.createElement("span")
+  mouth.className = "cat-mouth"
+  mouth.textContent = "3"
+
+  layer.appendChild(eyeL)
+  layer.appendChild(eyeR)
+  layer.appendChild(mouth)
+
+  wrapper.appendChild(glyph)
+  wrapper.appendChild(layer)
+
+  return wrapper
+}
+
+function isInsideCatify(node: Node): boolean {
+  return !!(node.parentElement?.closest(`.${CATIFY_CLASS}`))
+}
+
+function shouldSkipElement(element: Element): boolean {
   const tagName = element.tagName.toLowerCase()
-  const skipTags = ["script", "style", "noscript", "meta", "title", "head"]
-
-  if (skipTags.includes(tagName)) {
-    return false
-  }
-
-  return hasOnlyTextNodes(element)
+  const skipTags = ["script", "style", "noscript", "meta", "title", "head", "code", "pre", "textarea", "input"]
+  return skipTags.includes(tagName)
 }
 
-function processElement(element: Element, style: CatStyle | null): void {
-  if (!shouldProcessElement(element)) {
-    return
-  }
+function processTextNodeForSymbols(textNode: Text): void {
+  const text = textNode.textContent || ""
+  if (!SYMBOL_PATTERNS.test(text)) return
 
-  const tagName = element.tagName.toLowerCase()
-  const textContent = element.textContent?.substring(0, 50) || ""
-  console.log("[Content] processElement: Processing", tagName, "element, style =", style, "text preview:", textContent)
+  SYMBOL_PATTERNS.lastIndex = 0
 
-  storeOriginalText(element)
+  if (isInsideCatify(textNode)) return
 
-  const textNodes = Array.from(element.childNodes).filter(
-    (node) => node.nodeType === Node.TEXT_NODE
-  ) as Text[]
+  const parent = textNode.parentNode
+  if (!parent) return
 
-  if (style !== null) {
-    console.log("[Content] processElement: Replacing text in", textNodes.length, "text nodes with style", style)
-    textNodes.forEach((textNode) => {
-      const originalText = textNode.textContent || ""
-      if (originalText.trim().length > 0) {
-        const replacedText = replaceTextWithCats(originalText, style)
-        textNode.textContent = replacedText
-      }
-    })
-  } else {
-    console.log("[Content] processElement: Restoring original text")
-    restoreElementText(element)
-  }
+  const fragment = document.createDocumentFragment()
+  let lastIndex = 0
+  let match: RegExpExecArray | null
 
-  Array.from(element.children).forEach((child) => {
-    if (isStyleOrLinkTag(child.tagName) && shouldProcessElement(child)) {
-      processElement(child, style)
+  SYMBOL_PATTERNS.lastIndex = 0
+  while ((match = SYMBOL_PATTERNS.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)))
     }
-  })
+
+    fragment.appendChild(createCatWrapper(match[0]))
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)))
+  }
+
+  parent.replaceChild(fragment, textNode)
 }
 
-function processDocument(style: CatStyle | null): void {
-  console.log("[Content] processDocument: Called with style =", style)
-  if (!document.body) {
-    console.warn("[Content] processDocument: document.body not available")
-    return
-  }
+function catifySymbolsInDocument(): void {
+  if (!document.body) return
+
+  injectCatStyles()
 
   const walker = document.createTreeWalker(
     document.body,
-    NodeFilter.SHOW_ELEMENT,
+    NodeFilter.SHOW_TEXT,
     {
       acceptNode: (node) => {
-        const element = node as Element
-        if (shouldProcessElement(element)) {
+        const parent = node.parentElement
+        if (!parent) return NodeFilter.FILTER_REJECT
+        if (shouldSkipElement(parent)) return NodeFilter.FILTER_REJECT
+        if (isInsideCatify(node)) return NodeFilter.FILTER_REJECT
+        if (SYMBOL_PATTERNS.test(node.textContent || "")) {
+          SYMBOL_PATTERNS.lastIndex = 0
           return NodeFilter.FILTER_ACCEPT
         }
-        return NodeFilter.FILTER_SKIP
+        return NodeFilter.FILTER_REJECT
       }
     }
   )
 
-  const elementsToProcess: Element[] = []
-  let node: Node | null = walker.nextNode()
-
-  while (node) {
-    elementsToProcess.push(node as Element)
-    node = walker.nextNode()
+  const textNodes: Text[] = []
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    textNodes.push(node as Text)
   }
 
-  console.log("[Content] processDocument: Found", elementsToProcess.length, "elements to process")
-  elementsToProcess.forEach((element) => processElement(element, style))
-  console.log("[Content] processDocument: Finished processing elements")
+  textNodes.forEach(processTextNodeForSymbols)
 }
 
+function uncatifySymbolsInDocument(): void {
+  if (!document.body) return
+
+  const catified = document.querySelectorAll(`.${CATIFY_CLASS}`)
+  catified.forEach((wrapper) => {
+    const glyph = wrapper.querySelector(".cat-glyph")
+    if (glyph && wrapper.parentNode) {
+      const textNode = document.createTextNode(glyph.textContent || "")
+      wrapper.parentNode.replaceChild(textNode, wrapper)
+    }
+  })
+
+  removeCatStyles()
+}
+
+
 let observer: MutationObserver | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 function initObserver(): void {
   if (observer) {
@@ -207,33 +214,34 @@ function initObserver(): void {
   }
 
   observer = new MutationObserver((mutations) => {
-    if (currentStyle === null) {
-      return
-    }
+    if (debounceTimer) clearTimeout(debounceTimer)
 
-    const elementsToProcess = new Set<Element>()
+    debounceTimer = setTimeout(() => {
+      const textNodesToProcess: Text[] = []
 
-    mutations.forEach((mutation) => {
-      if (mutation.type === "childList") {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const element = node as Element
-            if (shouldProcessElement(element)) {
-              elementsToProcess.add(element)
-            }
+      mutations.forEach((mutation) => {
+        if (mutation.type === "childList") {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as Element
 
-            const childElements = element.querySelectorAll("*")
-            childElements.forEach((child) => {
-              if (shouldProcessElement(child)) {
-                elementsToProcess.add(child)
+              if (symbolCatsEnabled) {
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+                let textNode: Node | null
+                while ((textNode = walker.nextNode())) {
+                  if (SYMBOL_PATTERNS.test(textNode.textContent || "")) {
+                    SYMBOL_PATTERNS.lastIndex = 0
+                    textNodesToProcess.push(textNode as Text)
+                  }
+                }
               }
-            })
-          }
-        })
-      }
-    })
+            }
+          })
+        }
+      })
 
-    elementsToProcess.forEach((element) => processElement(element, currentStyle))
+      textNodesToProcess.forEach(processTextNodeForSymbols)
+    }, 50)
   })
 
   if (document.body) {
@@ -244,69 +252,46 @@ function initObserver(): void {
   }
 }
 
-function applyStyle(style: CatStyle | null): void {
-  console.log("[Content] applyStyle: Called with style =", style)
-  currentStyle = style
-  if (document.body) {
-    console.log("[Content] applyStyle: Processing document...")
-    processDocument(style)
-    console.log("[Content] applyStyle: Document processed")
+function applySymbolCats(enabled: boolean): void {
+  symbolCatsEnabled = enabled
+  if (enabled) {
+    catifySymbolsInDocument()
   } else {
-    console.warn("[Content] applyStyle: document.body not available")
+    uncatifySymbolsInDocument()
   }
-  console.log("[Content] applyStyle: Initializing observer...")
   initObserver()
-  console.log("[Content] applyStyle: Complete, currentStyle =", currentStyle)
 }
 
-console.log("[Content] Script loaded, checking chrome APIs...")
-
 if (typeof chrome !== "undefined" && chrome.storage && chrome.runtime) {
-  console.log("[Content] Chrome APIs available, initializing...")
+  chrome.storage.local.get(["symbolCatsEnabled"], (result) => {
+    const symbolEnabled = result.symbolCatsEnabled ?? false
 
-  chrome.storage.local.get(["catReplacerStyle"], (result) => {
-    console.log("[Content] Storage get callback, result:", result)
-    const style = (result.catReplacerStyle as CatStyle) || null
-    console.log("[Content] Initial style:", style)
+    const init = () => {
+      applySymbolCats(symbolEnabled)
+    }
 
     if (document.readyState === "loading") {
-      console.log("[Content] Document still loading, waiting for DOMContentLoaded...")
-      document.addEventListener("DOMContentLoaded", () => {
-        console.log("[Content] DOMContentLoaded fired, applying style...")
-        applyStyle(style)
-      })
+      document.addEventListener("DOMContentLoaded", init)
     } else {
-      console.log("[Content] Document ready, applying style immediately...")
-      applyStyle(style)
+      init()
     }
   })
 
-  console.log("[Content] Setting up message listener...")
-  chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
-    console.log("[Content] Message received:", message, "from sender:", sender)
-    if (message && message.style !== undefined) {
-      console.log("[Content] Message contains style:", message.style)
-      applyStyle(message.style)
+  chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: any) => {
+    if (message.symbolCatsEnabled !== undefined) {
+      applySymbolCats(message.symbolCatsEnabled)
       sendResponse({ success: true })
-    } else {
-      console.warn("[Content] Message doesn't contain style")
     }
     return true
   })
-  console.log("[Content] Message listener set up")
 } else {
-  console.warn("[Content] Chrome APIs not available:", {
-    chrome: typeof chrome,
-    storage: typeof chrome !== "undefined" && chrome.storage,
-    runtime: typeof chrome !== "undefined" && chrome.runtime
-  })
+  const init = () => {
+    applySymbolCats(false)
+  }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      applyStyle(null)
-    })
+    document.addEventListener("DOMContentLoaded", init)
   } else {
-    applyStyle(null)
+    init()
   }
 }
-
